@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.12 (2026-11-15)
 
 Unpairing (#6, ADR-025). A Guest can now pair again with a server it was
 paired with, once both sides have unpaired, in either order.
