@@ -17,6 +17,7 @@ Your programs run on this machine. Only operator graphs and tensors go to
 the server, which runs whitelisted tensor operators and nothing else.
 
   reflop pair <invite-code>         register with a server (once)
+  reflop unpair [server]            forget a server; it stops accepting this machine
   reflop status                     server, devices, limits, quotas
   reflop usage                      compute you have used on the server
   reflop data push ./pack --name d  upload a dataset once
@@ -38,6 +39,41 @@ def cmd_pair(a) -> int:
     return 0
 
 
+_UNPAIR_DONE = {
+    "revoked": "the server revoked this machine's key for {identity!r}. The Owner still has to delete it on "
+               "their side (`reflopd unpair {identity}`); reflopd shows them that.",
+    "already": "the server had already stopped accepting this machine's key, so nothing is left to do there.",
+    "unreachable": "could not reach the server to tell it ({detail}). Ask the Owner to run "
+                   "`reflopd unpair {identity}`; until then, a new invite from that server cannot pair this machine.",
+    "mismatch": "the server presented a different key than the one pinned at pairing, so nothing was sent to it. "
+                "Ask the Owner to run `reflopd unpair {identity}`.",
+    "unsupported": "its reflopd is too old to be told. Ask the Owner to run `reflopd revoke {identity}` and "
+                   "`reflopd users delete {identity}`.",
+    "skipped": "the server was not told (--local). Ask the Owner to run `reflopd unpair {identity}`.",
+    "failed": "telling the server failed ({detail}). Ask the Owner to run `reflopd unpair {identity}`.",
+}
+
+
+def cmd_unpair(a) -> int:
+    from ..client import unpair
+    from ..config import ClientConfig
+
+    name = a.name or a.server
+    entry = ClientConfig.load().get(name)
+    if not a.yes and sys.stdin.isatty():
+        how = "" if a.local else " and tell it to stop accepting this machine's key"
+        sys.stdout.write(f"Forget {entry.name} (paired as {entry.identity!r}){how}? Pairing again needs a new "
+                         "invite. [y/N] ")
+        sys.stdout.flush()
+        if not sys.stdin.readline().strip().lower().startswith("y"):
+            _p("not changed")
+            return 1
+    entry, outcome, detail = unpair(entry.name, local_only=a.local)
+    _p(f"forgot {entry.name}: " + _UNPAIR_DONE[outcome].format(identity=entry.identity, detail=detail or "?"))
+    _p("to pair again: reflop pair <new-invite-code>")
+    return 0
+
+
 def cmd_servers(a) -> int:
     from ..config import ClientConfig
 
@@ -50,11 +86,12 @@ def cmd_servers(a) -> int:
         cfg.save()
         return 0
     if a.action == "remove":
-        cfg.servers.pop(a.name, None)
-        if cfg.default == a.name:
-            cfg.default = next(iter(cfg.servers), "")
-        cfg.save()
-        return 0
+        # Removing only the local entry left this machine's key registered,
+        # so it could never pair with that server again (issue #6).
+        if not a.name:
+            _p("usage: reflop servers remove <name> (the same as reflop unpair <name>)")
+            return 2
+        return cmd_unpair(argparse.Namespace(name=a.name, server=None, local=False, yes=False))
     if not cfg.servers:
         _p("no servers paired (reflop pair <invite-code>)")
     for n, s in cfg.servers.items():
@@ -326,6 +363,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("code")
     p.add_argument("--name", help="local name for this server")
     p.set_defaults(fn=cmd_pair)
+    p = sub.add_parser("unpair", help="forget a paired server and give up this machine's access to it")
+    p.add_argument("name", nargs="?", help="local server name (default: the default server)")
+    p.add_argument("--local", action="store_true", help="forget the server without contacting it")
+    p.add_argument("--yes", "-y", action="store_true", help="do not ask for confirmation")
+    p.set_defaults(fn=cmd_unpair)
     p = sub.add_parser("servers", help="list paired servers")
     p.add_argument("action", nargs="?", choices=["list", "default", "remove"], default="list")
     p.add_argument("name", nargs="?")

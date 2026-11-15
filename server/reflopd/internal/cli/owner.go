@@ -253,13 +253,13 @@ func usersCmd() *cobra.Command {
 					vs = append(vs, v)
 				}
 				sort.Strings(vs)
-				state := "active"
-				if id.Revoked {
-					state = "revoked"
-				}
-				fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", id.Name, len(id.Keys), strings.Join(vs, ","), id.Created.Format("2006-01-02"), state)
+				fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", id.Name, len(id.Keys), strings.Join(vs, ","), id.Created.Format("2006-01-02"), identityState(id))
 			}
-			return tw.Flush()
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+			printGuestUnpaired(cmd.OutOrStdout(), ids.List())
+			return nil
 		},
 	}
 	cmd.AddCommand(usersDeleteCmd())
@@ -283,7 +283,6 @@ Only revoked identities can be deleted; revoke an active one first:
   reflopd users delete alice`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out := cmd.OutOrStdout()
 			name := args[0]
 			l, err := layout()
 			if err != nil {
@@ -298,48 +297,55 @@ Only revoked identities can be deleted; revoke an active one first:
 				return exitWith(ExitUsage, fmt.Errorf("no identity named %q", name))
 			}
 			if !id.Revoked {
-				return exitWith(ExitUsage, fmt.Errorf("%q is an active identity; revoke it first with `reflopd revoke %s`", name, name))
+				return exitWith(ExitUsage, fmt.Errorf("%q is an active identity; revoke it first with `reflopd revoke %s`, "+
+					"or do both with `reflopd unpair %s`", name, name, name))
 			}
-			// The id comes from our own file, but it becomes a path to delete.
-			if !identityIDRe.MatchString(id.ID) {
-				return fmt.Errorf("identity %q has a malformed id %q; not deleting any files", name, id.ID)
-			}
-			for _, dir := range []string{l.IdentityStore(id.ID), l.IdentitySnapshots(id.ID)} {
-				if err := os.RemoveAll(dir); err != nil {
-					return fmt.Errorf("deleting %s: %w", dir, err)
-				}
-			}
-			s, err := config.LoadSettings(settingsPath(l))
-			if err != nil {
-				return err
-			}
-			if _, had := s.Quotas[name]; had {
-				delete(s.Quotas, name)
-				if err := config.SaveSettings(settingsPath(l), s); err != nil {
-					return err
-				}
-			}
-			if _, err := ids.Delete(name); err != nil {
-				if errors.Is(err, auth.ErrNotRevoked) {
-					return exitWith(ExitUsage, err)
-				}
-				return err
-			}
-			if ak, err := sshpipe.AuthorizedKeysPath(); err == nil {
-				if n, err := sshpipe.RemoveIdentity(ak, id.ID); err == nil && n > 0 {
-					fmt.Fprintf(out, "removed %d line(s) from %s\n", n, ak)
-				}
-			}
-			notifyReload()
-			fmt.Fprintf(out, "deleted %q, its stored datasets and snapshots, and its quotas\n", name)
-			if cfg, err := config.Load(l.ConfigFile(), settingsPath(l)); err == nil {
-				if _, still := cfg.Quotas[name]; still {
-					fmt.Fprintf(out, "note: %s still sets quotas for %q; a new identity with that name would get them\n", l.ConfigFile(), name)
-				}
-			}
-			return nil
+			return deleteIdentity(cmd.OutOrStdout(), l, ids, id)
 		},
 	}
+}
+
+// deleteIdentity removes a revoked identity, its data, quotas and SSH lines.
+func deleteIdentity(out io.Writer, l paths.Layout, ids *auth.Store, id auth.Identity) error {
+	name := id.Name
+	// The id comes from our own file, but it becomes a path to delete.
+	if !identityIDRe.MatchString(id.ID) {
+		return fmt.Errorf("identity %q has a malformed id %q; not deleting any files", name, id.ID)
+	}
+	for _, dir := range []string{l.IdentityStore(id.ID), l.IdentitySnapshots(id.ID)} {
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("deleting %s: %w", dir, err)
+		}
+	}
+	s, err := config.LoadSettings(settingsPath(l))
+	if err != nil {
+		return err
+	}
+	if _, had := s.Quotas[name]; had {
+		delete(s.Quotas, name)
+		if err := config.SaveSettings(settingsPath(l), s); err != nil {
+			return err
+		}
+	}
+	if _, err := ids.Delete(name); err != nil {
+		if errors.Is(err, auth.ErrNotRevoked) {
+			return exitWith(ExitUsage, err)
+		}
+		return err
+	}
+	if ak, err := sshpipe.AuthorizedKeysPath(); err == nil {
+		if n, err := sshpipe.RemoveIdentity(ak, id.ID); err == nil && n > 0 {
+			fmt.Fprintf(out, "removed %d line(s) from %s\n", n, ak)
+		}
+	}
+	notifyReload()
+	fmt.Fprintf(out, "deleted %q, its stored datasets and snapshots, and its quotas\n", name)
+	if cfg, err := config.Load(l.ConfigFile(), settingsPath(l)); err == nil {
+		if _, still := cfg.Quotas[name]; still {
+			fmt.Fprintf(out, "note: %s still sets quotas for %q; a new identity with that name would get them\n", l.ConfigFile(), name)
+		}
+	}
+	return nil
 }
 
 func revokeCmd() *cobra.Command {
@@ -356,21 +362,126 @@ func revokeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id, err := ids.Revoke(args[0])
+			out := cmd.OutOrStdout()
+			id, err := revokeIdentity(out, ids, args[0])
 			if err != nil {
 				return err
 			}
-			if ak, err := sshpipe.AuthorizedKeysPath(); err == nil {
-				if n, err := sshpipe.RemoveIdentity(ak, id.ID); err == nil && n > 0 {
-					fmt.Fprintf(cmd.OutOrStdout(), "removed %d line(s) from %s\n", n, ak)
-				}
+			fmt.Fprintf(out, "revoked %q\n", args[0])
+			if id.GuestUnpaired == nil {
+				fmt.Fprintln(out, "On the Guest machine, `reflop unpair` forgets this server.")
 			}
-			notifyReload()
-			_ = control("kill", map[string]string{"target": args[0]}, nil)
-			fmt.Fprintf(cmd.OutOrStdout(), "revoked %q\n", args[0])
+			fmt.Fprintf(out, "To delete it and its data and free the name: reflopd users delete %s\n", args[0])
 			return nil
 		},
 	}
+}
+
+// revokeIdentity revokes name, removes its SSH lines and ends its sessions.
+func revokeIdentity(out io.Writer, ids *auth.Store, name string) (*auth.Identity, error) {
+	id, err := ids.Revoke(name)
+	if err != nil {
+		return nil, err
+	}
+	if ak, err := sshpipe.AuthorizedKeysPath(); err == nil {
+		if n, err := sshpipe.RemoveIdentity(ak, id.ID); err == nil && n > 0 {
+			fmt.Fprintf(out, "removed %d line(s) from %s\n", n, ak)
+		}
+	}
+	notifyReload()
+	_ = control("kill", map[string]string{"target": name}, nil)
+	return id, nil
+}
+
+func identityState(id auth.Identity) string {
+	switch {
+	case id.Revoked && id.GuestUnpaired != nil:
+		return "unpaired by guest"
+	case id.Revoked:
+		return "revoked"
+	}
+	return "active"
+}
+
+// printGuestUnpaired asks the Owner to finish what `reflop unpair` started
+// (ADR-025): the Guest revoked its own key, the Owner deletes the identity.
+func printGuestUnpaired(out io.Writer, list []auth.Identity) {
+	var names []string
+	for _, id := range list {
+		if id.Revoked && id.GuestUnpaired != nil {
+			names = append(names, id.Name)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\n%s ran `reflop unpair`: their keys no longer work. To delete them and their data and free the name:\n",
+		strings.Join(names, ", "))
+	for _, n := range names {
+		fmt.Fprintf(out, "  reflopd unpair %s\n", n)
+	}
+}
+
+func unpairCmd() *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "unpair <name>",
+		Short: "Forget a Guest: revoke it, then delete it, its datasets, snapshots and quotas",
+		Long: `Unpair a Guest: ` + "`reflopd revoke`" + ` and ` + "`reflopd users delete`" + ` in one step.
+Its keys stop working, its sessions end, its datasets and snapshots are
+deleted, and its name can be invited again. The audit log keeps its history.
+
+The Guest forgets this server with ` + "`reflop unpair`" + `. Either side may go
+first; after both, a new invite pairs them as if for the first time.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			name := args[0]
+			l, err := layout()
+			if err != nil {
+				return err
+			}
+			ids, err := auth.Open(l.Identities())
+			if err != nil {
+				return err
+			}
+			id, ok := ids.Get(name)
+			if !ok {
+				return exitWith(ExitUsage, fmt.Errorf("no identity named %q", name))
+			}
+			if !yes {
+				if !isTerminal(os.Stdin) {
+					return exitWith(ExitUsage, fmt.Errorf("unpairing %q deletes its datasets and snapshots; pass --yes to confirm", name))
+				}
+				fmt.Fprintf(out, "Unpair %q? Its keys stop working and its datasets and snapshots are deleted. [y/N] ", name)
+				ans, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ans)), "y") {
+					fmt.Fprintln(out, "not changed")
+					return nil
+				}
+			}
+			if !id.Revoked {
+				if _, err := revokeIdentity(out, ids, name); err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "revoked %q\n", name)
+				if id, ok = ids.Get(name); !ok {
+					return fmt.Errorf("identity %q disappeared while unpairing", name)
+				}
+			}
+			if err := deleteIdentity(out, l, ids, id); err != nil {
+				return err
+			}
+			if id.GuestUnpaired != nil {
+				fmt.Fprintf(out, "unpaired %q; the Guest had already run `reflop unpair`, so a new invite pairs them again\n", name)
+			} else {
+				fmt.Fprintf(out, "unpaired %q. On the Guest machine, `reflop unpair` forgets this server; then a new invite pairs them again\n", name)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
+	return cmd
 }
 
 func settingsPath(l paths.Layout) string { return filepath.Join(l.State, "settings.json") }
@@ -768,7 +879,15 @@ func statusCmd() *cobra.Command {
 			if err := control("status", nil, &st); err != nil {
 				return err
 			}
-			return printStatus(cmd.OutOrStdout(), st, false)
+			if err := printStatus(cmd.OutOrStdout(), st, false); err != nil {
+				return err
+			}
+			if l, err := layout(); err == nil {
+				if ids, err := auth.Open(l.Identities()); err == nil {
+					printGuestUnpaired(cmd.OutOrStdout(), ids.List())
+				}
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "JSON output")

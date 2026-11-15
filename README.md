@@ -268,6 +268,7 @@ correction, a Python learning-rate schedule) are detected and refused; use
 | `reflopd status` · `top` · `audit` | who is connected, live memory and FLOPs, the audit log |
 | `reflopd pause` · `resume` · `kill alice` · `say "…"` | Owner controls |
 | `reflopd revoke alice` · `users delete alice` | cut a Guest off; then remove them and their data |
+| `reflopd unpair alice` · `reflop unpair` | both of those in one step; the Guest's side, so they can pair again |
 | `reflopd yield --auto` | pause Guests while you use the GPU yourself |
 | `reflopd quota set alice --device-memory 6GiB` | optional quotas (none by default) |
 | `reflopd rails show` · `rails set --ram 8GiB` | safety rails (always on) |

@@ -79,3 +79,9 @@ class SessionLostError(ReflopRemoteError):
 
 class ServerKeyMismatch(ReflopError):
     """The server presented a different key than the pinned one."""
+
+
+class NotPairedError(ReflopRemoteError):
+    """The server (its pinned key matched) no longer accepts this machine's
+    key: the Owner revoked or unpaired this identity. `reflop unpair` forgets
+    the server on this side (ADR-025)."""

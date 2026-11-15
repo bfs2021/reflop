@@ -497,3 +497,55 @@ from the audit log (the audit log is append-only).
 identity id and none of the old data, but shares the old name's history in
 `reflopd audit --name` and `reflopd usage`. Quotas set for the name in
 `reflopd.toml` are not edited; the command prints a note if one remains.
+
+## ADR-025: Unpairing on both sides
+
+**Context.** A machine has one client key, and reflopd registers a key to one
+identity. `reflop servers remove` only deleted the local entry, so the key
+stayed registered and every later `reflop pair` with that server failed with
+"this key is already registered" (issue #6). In the other direction, after
+`reflopd revoke` and `users delete` the Guest saw only "authentication
+failed" and kept a stale entry, and pairing again added a second one.
+
+**Decision.** Unpairing has a Guest half and an Owner half, done in either
+order; after both, the two machines have forgotten each other and a new
+invite pairs them as the first time did.
+
+- `reflop unpair [server]` connects, authenticates and sends the new
+  `Unpair` message, then removes the server from `servers.json` and its
+  pinned SSH host keys. reflopd answers by revoking the calling identity
+  (`auth.Store.GuestUnpair`: keys dropped, invites used up, sessions ended,
+  the same effect as `reflopd revoke`), records `guest_unpaired` in the audit
+  log, marks the identity, and closes the connection. `Unpair` is accepted only
+  after authentication and acts only on the connection's own identity, so a
+  Guest can give up its own access and nothing else.
+- The local entry is removed whatever happens on the server: unreachable,
+  already revoked, a different server key (nothing is sent then), or a
+  reflopd too old to know `Unpair`. `--local` skips the connection. Each
+  outcome says what the Owner still has to run.
+- `reflopd unpair <name>` is `revoke` plus `users delete`, behind a
+  confirmation prompt (or `--yes`; without a terminal it refuses).
+- Each side is told when the other has gone first. `reflopd users` shows
+  "unpaired by guest" and `reflopd status` and the daemon log name the
+  command to run. A client whose pinned server rejects its key raises
+  `NotPairedError` with "run `reflop unpair <server>`". `reflop pair` refuses
+  a server this machine is already paired with, before the invite is used. A
+  Pair whose key is still registered says, to the Guest and in the Owner's
+  log and audit record, to run `reflopd unpair <name>`.
+
+**Alternatives.** Leave the key valid after the Guest's `Unpair` and only
+flag it for the Owner (an unused key stays live until the Owner acts); let
+`reflop unpair` delete the identity's datasets on the server as well
+(deleting data stays the Owner's decision); unpair locally only and let the
+Owner find out at the next failed pairing (the Owner learns late, and the
+invite is wasted); give the client a new key on unpair (one key serves every
+paired server, so the others would break).
+
+**Consequences.** Protocol messages `Unpair` (envelope field 33) and
+`Unpaired` (122) are added. Identities gain an optional `guest_unpaired`
+timestamp; a reflopd older than this change refuses to load an
+`identities.json` that contains one. In SSH pipe mode the `authorized_keys`
+line stays until the Owner deletes the identity, but the key no longer
+authenticates inside the pipe. ADR-024 rejected `revoke --delete` because one
+typo could delete an active Guest's data; `reflopd unpair` asks before it
+deletes for that reason.

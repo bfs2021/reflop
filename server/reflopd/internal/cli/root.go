@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/buildinfo"
 	"github.com/chaseungjoon/reflop/server/reflopd/internal/paths"
@@ -71,7 +72,7 @@ whitelisted tensor operators in sandboxed workers. Guests never get a shell.
 	}
 	root.AddCommand(
 		upCmd(), serveCmd(), stopCmd(), statusCmd(), installCmd(), uninstallCmd(),
-		inviteCmd(), usersCmd(), revokeCmd(), quotaCmd(), railsCmd(),
+		inviteCmd(), usersCmd(), revokeCmd(), unpairCmd(), quotaCmd(), railsCmd(),
 		pauseCmd(), resumeCmd(), killCmd(), yieldCmd(), sayCmd(), topCmd(), usageCmd(), auditCmd(),
 		doctorCmd(), selftestCmd(), runtimeCmd(), updateCmd(), versionCmd(),
 	)
@@ -136,7 +137,10 @@ func humanBytes(n uint64) string {
 	return fmt.Sprintf("%.1f %s", v, units[i])
 }
 
+// isTerminal reports whether f is a tty. A character device is not enough:
+// /dev/null is one too, and a confirmation prompt must not read "no answer"
+// from it as if a person had been asked.
 func isTerminal(f *os.File) bool {
-	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	_, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS)
+	return err == nil
 }

@@ -67,6 +67,23 @@ whatever your `~/.ssh/config` says. Servers paired with an older client have no
 pinned host keys; ssh then checks your `~/.ssh/known_hosts`, and never accepts
 an unknown key. Pair again with a new invite to pin them.
 
+### Unpairing
+
+```sh
+reflop unpair lab          # or just `reflop unpair` for the default server
+```
+
+This tells the server to stop accepting this machine's key, then forgets the
+server here. The Owner's half is `reflopd unpair <your-name>`, which also
+deletes your datasets and snapshots on the server. Either side may go first;
+once both have, `reflop pair` with a new invite works as it did the first time.
+
+If the server cannot be reached, `reflop unpair` still forgets it and tells
+you to ask the Owner to run `reflopd unpair <your-name>`. `--local` skips the
+connection. If the Owner unpaired you first, commands fail with "no longer
+accepts this machine's key: run `reflop unpair lab`". `reflop pair` with a
+server you are still paired with tells you to unpair first.
+
 ## The device
 
 ```python
@@ -350,7 +367,8 @@ convolutions by default, and some GPU kernels are not deterministic).
 | Command | Purpose |
 |---|---|
 | `reflop pair <code> [--name lab]` | register with a server |
-| `reflop servers [default\|remove <name>]` | list and manage paired servers |
+| `reflop unpair [<name>] [--local]` | forget a server and give up this machine's access to it |
+| `reflop servers [default\|remove <name>]` | list and manage paired servers (`remove` is `unpair`) |
 | `reflop status` | devices, enabled operators, limits, your quotas, datasets |
 | `reflop usage [--json]` | compute you have used on the server |
 | `reflop init` | measure round-trip time and local speed, write `.reflop.toml` |

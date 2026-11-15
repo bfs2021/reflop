@@ -95,6 +95,21 @@ the identity, its datasets and snapshots on disk, and its quotas, and frees the
 name. The audit log keeps its history. It refuses an identity that is still
 active; revoke it first.
 
+### Unpairing a Guest
+
+`reflopd unpair alice` does both steps: it revokes `alice` and deletes her.
+It asks first, because the datasets and snapshots go too (`--yes` skips the
+question). The Guest's half is `reflop unpair` on their machine. Either of you
+may go first. Once both have run, a new invite pairs that machine as if for
+the first time.
+
+If the Guest goes first, reflopd revokes her keys at once, and `reflopd users`
+lists her as `unpaired by guest`. `reflopd status` and the daemon log print
+the command that finishes it. If a Guest forgot this server without
+telling it (offline, or an old client), their next `reflop pair` fails, and
+the daemon log says `tried to pair with the key of "alice" again` and which
+command to run.
+
 ## Network exposure
 
 | Bind | Who can connect | When |
