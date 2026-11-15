@@ -155,8 +155,14 @@ func (c *clientConn) handshake() error {
 			if err != nil {
 				fields := map[string]any{"remote": c.remote}
 				var ie *auth.InviteError
-				if errors.As(err, &ie) {
+				var kr *auth.KeyRegisteredError
+				switch {
+				case errors.As(err, &ie):
 					fields["reason"] = ie.Reason
+				case errors.As(err, &kr):
+					fields["reason"] = "key already registered to " + kr.Name
+					c.srv.logf("%s tried to pair with the key of %q again: that Guest forgot this server without "+
+						"telling it. To let them pair again, run: reflopd unpair %s", c.remote, kr.Name, kr.Name)
 				}
 				c.auditFailure("pair_failed", fields)
 				msg := auth.ErrInvite.Error()
@@ -230,11 +236,13 @@ func (c *clientConn) loop() {
 			return
 		}
 		if !c.srv.ids.IsActive(c.identity.ID) {
-			c.sendErr(env.RequestId, pb.ErrorCode_ERROR_UNAUTHENTICATED, "this identity was revoked")
+			c.sendErr(env.RequestId, pb.ErrorCode_ERROR_UNAUTHENTICATED, revokedMessage)
 			return
 		}
 		if err := c.route(env); err != nil {
-			c.srv.logf("%s: %v", c.identity.Name, err)
+			if !errors.Is(err, errUnpaired) {
+				c.srv.logf("%s: %v", c.identity.Name, err)
+			}
 			return
 		}
 	}
@@ -245,6 +253,8 @@ func (c *clientConn) route(env *pb.Envelope) error {
 	switch b := env.Body.(type) {
 	case *pb.Envelope_Ping:
 		return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_Pong{Pong: &pb.Pong{Nonce: b.Ping.Nonce}}})
+	case *pb.Envelope_Unpair:
+		return c.unpair(rid)
 	case *pb.Envelope_GetUsage:
 		return c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_UsageReport{UsageReport: c.srv.guestUsage(c.identity.Name)}})
 	case *pb.Envelope_SubscribeEvents:
@@ -275,6 +285,33 @@ func (c *clientConn) route(env *pb.Envelope) error {
 		c.sendErr(rid, pb.ErrorCode_ERROR_PROTOCOL, "unexpected message")
 		return errors.New("unexpected client message")
 	}
+}
+
+// revokedMessage is sent to a connection whose identity was revoked.
+const revokedMessage = "this identity was revoked; run `reflop unpair` to forget this server"
+
+// errUnpaired ends the connection after a successful Unpair.
+var errUnpaired = errors.New("unpaired by the Guest")
+
+// unpair revokes the connection's own identity at the Guest's request
+// (`reflop unpair`, ADR-025), ends its sessions and closes the connection.
+// The identity stays in the store, marked, until the Owner deletes it.
+func (c *clientConn) unpair(rid uint64) error {
+	id, err := c.srv.ids.GuestUnpair(c.identity.ID)
+	if err != nil {
+		c.sendErr(rid, pb.ErrorCode_ERROR_UNAUTHENTICATED, revokedMessage)
+		return err
+	}
+	c.srv.audit.Write(audit.Record{Identity: id.Name, ID: id.ID, Event: "guest_unpaired",
+		Fields: map[string]any{"remote": c.remote, "keys": len(id.Keys)}})
+	c.srv.logf("%q ran `reflop unpair` from %s: its keys are revoked. To delete it and its data and free "+
+		"the name, run: reflopd unpair %s", id.Name, c.remote, id.Name)
+	c.srv.Kill(id.Name, "the Guest unpaired")
+	if err := c.send(&pb.Envelope{RequestId: rid, End: true, Body: &pb.Envelope_Unpaired{
+		Unpaired: &pb.Unpaired{IdentityName: id.Name}}}); err != nil {
+		return err
+	}
+	return errUnpaired
 }
 
 func (c *clientConn) openSession(rid uint64, req *pb.OpenSession) error {

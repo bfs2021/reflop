@@ -28,7 +28,7 @@ from ._pb import compute_pb2 as cpb
 from ._pb import graph_pb2 as gpb
 from .config import ClientConfig, ServerEntry
 from .connection import Connection
-from .errors import ReflopError, ReflopRemoteError, ServerKeyMismatch, SessionLostError, sanitize
+from .errors import NotPairedError, ReflopError, ReflopRemoteError, ServerKeyMismatch, SessionLostError, sanitize
 
 PROTOCOL_VERSION = 1
 AUTH_CONTEXT = b"reflop-auth-v1\x00"
@@ -260,10 +260,11 @@ def pair(code: str, name: str | None = None) -> ServerEntry:
     now = time.time()
     if inv.expires_unix and inv.expires_unix < now:
         raise ReflopError(_expired_message(inv.expires_unix, now))
-    key = keys.load_or_create()
     fp = inv.server_key_fingerprint
     if len(fp) != 32:
         raise ReflopError("invite has no server key fingerprint")
+    _check_not_paired(ClientConfig.load(), fp.hex())
+    key = keys.load_or_create()
     host_keys: list[str] = []
     if inv.transport == apb.TRANSPORT_SSH:
         try:
@@ -299,6 +300,18 @@ def pair(code: str, name: str | None = None) -> ServerEntry:
         cfg.default = entry.name
     cfg.save()
     return entry
+
+
+def _check_not_paired(cfg: ClientConfig, fingerprint_hex: str) -> None:
+    """One machine has one key, and a server registers a key once: pairing
+    again with a server this machine is paired with needs an unpair on both
+    sides first (issue #6). Checked before the invite is used up."""
+    for n, s in cfg.servers.items():
+        if hmac.compare_digest(s.fingerprint, fingerprint_hex):
+            raise ReflopError(
+                f"this machine is already paired with that server, as {s.identity!r} (local name {n!r}). "
+                f"To pair again, run `reflop unpair {n}` first. If the Owner has not unpaired you yet, they "
+                f"run `reflopd unpair {s.identity}`; then ask them for a new invite.")
 
 
 def _default_name(inv, cfg) -> str:
@@ -337,11 +350,26 @@ class RemoteConnection(Connection):
                                self.entry.ssh_port)
         else:
             self.fr = dial_tls(self.entry.addresses, self.fp)
-        hr = _hello(self.fr)
+        try:
+            hr = _hello(self.fr)
+        except EOFError:
+            self.fr.close()
+            if self.entry.transport != "ssh":
+                raise
+            raise ReflopError(
+                f"ssh to {self.entry.addresses[0]} closed before the reflop handshake. If sshd rejected this "
+                f"machine's key, the Owner has probably unpaired you: run `reflop unpair {self.entry.name}` to "
+                "forget this server. `reflop doctor` checks the connection.") from None
         if not hmac.compare_digest(hr.server_key_fingerprint, self.fp):
             self.fr.close()
             raise ServerKeyMismatch("the server's key does not match the pinned key")
-        self.auth = _authenticate(self.fr, self.key, hr.server_nonce, self.fp)
+        try:
+            self.auth = _authenticate(self.fr, self.key, hr.server_nonce, self.fp)
+        except ReflopRemoteError as e:
+            self.fr.close()
+            if e.code != cpb.ERROR_UNAUTHENTICATED:
+                raise
+            raise NotPairedError(e.code, not_paired_message(self.entry)) from None
         lim = self.auth.capabilities.limits
         self.fr.max_frame = frame_limit(lim.max_frame_bytes)
         if lim.max_fetch_bytes:
@@ -426,6 +454,89 @@ class RemoteConnection(Connection):
             pass
         self.closed = True
         self.fr.close()
+
+
+def not_paired_message(entry: ServerEntry) -> str:
+    return (f"{entry.name} no longer accepts this machine's key: the Owner has revoked or unpaired "
+            f"{entry.identity!r}. Run `reflop unpair {entry.name}` to forget this server; to use it again, "
+            "pair with a new invite from the Owner.")
+
+
+# ---------------------------------------------------------------- unpair
+
+# What the server side did when `reflop unpair` told it (ADR-025).
+UNPAIR_REVOKED = "revoked"          # the server revoked this machine's key now
+UNPAIR_ALREADY = "already"          # the server had already stopped accepting the key
+UNPAIR_UNREACHABLE = "unreachable"  # could not connect
+UNPAIR_MISMATCH = "mismatch"        # a different server key: nothing was sent
+UNPAIR_UNSUPPORTED = "unsupported"  # reflopd too old to know Unpair
+UNPAIR_SKIPPED = "skipped"          # --local
+UNPAIR_FAILED = "failed"            # anything else; detail says what
+
+
+def unpair(name: str | None = None, local_only: bool = False) -> tuple[ServerEntry, str, str]:
+    """Forget a paired server. Unless local_only, first tell it, which
+    revokes this machine's key there. The local entry is removed whatever
+    the server says: a server that cannot be reached must not keep a Guest
+    from forgetting it. Returns (entry, outcome, detail)."""
+    cfg = ClientConfig.load()
+    entry = cfg.get(name)
+    outcome, detail = (UNPAIR_SKIPPED, "") if local_only else _tell_unpair(entry)
+    forget(cfg, entry.name)
+    return entry, outcome, detail
+
+
+def _tell_unpair(entry: ServerEntry) -> tuple[str, str]:
+    key = keys.load_or_create()
+    fp = bytes.fromhex(entry.fingerprint)
+    try:
+        if entry.transport == "ssh":
+            fr = dial_ssh(entry.addresses[0], key, entry.fingerprint, entry.ssh_host_keys, entry.ssh_port)
+        else:
+            fr = dial_tls(entry.addresses, fp)
+    except ServerKeyMismatch:
+        return UNPAIR_MISMATCH, ""
+    except (ReflopError, OSError) as e:
+        return UNPAIR_UNREACHABLE, sanitize(str(e), 300)
+    try:
+        hr = _hello(fr)
+        if not hmac.compare_digest(hr.server_key_fingerprint, fp):
+            return UNPAIR_MISMATCH, ""
+        try:
+            _authenticate(fr, key, hr.server_nonce, fp)
+        except ReflopRemoteError as e:
+            if e.code == cpb.ERROR_UNAUTHENTICATED:
+                return UNPAIR_ALREADY, ""
+            raise
+        fr.write(cpb.Envelope(request_id=4, unpair=cpb.Unpair()))
+        env = fr.read()
+        body = env.WhichOneof("body")
+        if body == "unpaired":
+            return UNPAIR_REVOKED, ""
+        if body == "error":
+            if env.error.code == cpb.ERROR_PROTOCOL:
+                return UNPAIR_UNSUPPORTED, ""
+            if env.error.code == cpb.ERROR_UNAUTHENTICATED:
+                return UNPAIR_ALREADY, ""
+            raise ReflopRemoteError.from_pb(env.error)
+        return UNPAIR_FAILED, "unexpected reply to Unpair"
+    except EOFError:
+        # SSH: sshd no longer lets this key in, or the connection dropped.
+        return UNPAIR_UNREACHABLE, "the connection closed"
+    except (ReflopError, OSError) as e:
+        return UNPAIR_FAILED, sanitize(str(e), 300)
+    finally:
+        fr.close()
+
+
+def forget(cfg: ClientConfig, name: str) -> None:
+    """Remove a server from the config, with its pinned SSH host keys."""
+    entry = cfg.servers.pop(name)
+    if cfg.default == name:
+        cfg.default = next(iter(cfg.servers), "")
+    cfg.save()
+    if not any(s.fingerprint == entry.fingerprint for s in cfg.servers.values()):
+        _sshhost.forget(entry.fingerprint)
 
 
 def connect(server: str | None = None, kind: str = "auto") -> RemoteConnection:

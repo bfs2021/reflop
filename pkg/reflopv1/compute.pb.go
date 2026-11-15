@@ -2677,6 +2677,90 @@ func (x *Pong) GetNonce() uint64 {
 	return 0
 }
 
+// Unpair is sent by `reflop unpair`: the calling identity gives up its own
+// access (ADR-025). The server revokes the identity, as `reflopd revoke`
+// does, and asks the Owner to delete it. Answered with Unpaired; the server
+// then closes the connection. Servers without it answer ERROR_PROTOCOL.
+type Unpair struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Unpair) Reset() {
+	*x = Unpair{}
+	mi := &file_reflop_v1_compute_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Unpair) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Unpair) ProtoMessage() {}
+
+func (x *Unpair) ProtoReflect() protoreflect.Message {
+	mi := &file_reflop_v1_compute_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Unpair.ProtoReflect.Descriptor instead.
+func (*Unpair) Descriptor() ([]byte, []int) {
+	return file_reflop_v1_compute_proto_rawDescGZIP(), []int{40}
+}
+
+type Unpaired struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IdentityName  string                 `protobuf:"bytes,1,opt,name=identity_name,json=identityName,proto3" json:"identity_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Unpaired) Reset() {
+	*x = Unpaired{}
+	mi := &file_reflop_v1_compute_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Unpaired) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Unpaired) ProtoMessage() {}
+
+func (x *Unpaired) ProtoReflect() protoreflect.Message {
+	mi := &file_reflop_v1_compute_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Unpaired.ProtoReflect.Descriptor instead.
+func (*Unpaired) Descriptor() ([]byte, []int) {
+	return file_reflop_v1_compute_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *Unpaired) GetIdentityName() string {
+	if x != nil {
+		return x.IdentityName
+	}
+	return ""
+}
+
 type Envelope struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId uint64                 `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -2706,6 +2790,7 @@ type Envelope struct {
 	//	*Envelope_DeleteSnapshot
 	//	*Envelope_Reseed
 	//	*Envelope_GetUsage
+	//	*Envelope_Unpair
 	//	*Envelope_Error
 	//	*Envelope_HelloResponse
 	//	*Envelope_AuthResult
@@ -2728,6 +2813,7 @@ type Envelope struct {
 	//	*Envelope_SnapshotList
 	//	*Envelope_Reseeded
 	//	*Envelope_UsageReport
+	//	*Envelope_Unpaired
 	Body          isEnvelope_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2735,7 +2821,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_reflop_v1_compute_proto_msgTypes[40]
+	mi := &file_reflop_v1_compute_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2747,7 +2833,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_reflop_v1_compute_proto_msgTypes[40]
+	mi := &file_reflop_v1_compute_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2760,7 +2846,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_reflop_v1_compute_proto_rawDescGZIP(), []int{40}
+	return file_reflop_v1_compute_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *Envelope) GetRequestId() uint64 {
@@ -2991,6 +3077,15 @@ func (x *Envelope) GetGetUsage() *GetUsage {
 	return nil
 }
 
+func (x *Envelope) GetUnpair() *Unpair {
+	if x != nil {
+		if x, ok := x.Body.(*Envelope_Unpair); ok {
+			return x.Unpair
+		}
+	}
+	return nil
+}
+
 func (x *Envelope) GetError() *Error {
 	if x != nil {
 		if x, ok := x.Body.(*Envelope_Error); ok {
@@ -3189,6 +3284,15 @@ func (x *Envelope) GetUsageReport() *UsageReport {
 	return nil
 }
 
+func (x *Envelope) GetUnpaired() *Unpaired {
+	if x != nil {
+		if x, ok := x.Body.(*Envelope_Unpaired); ok {
+			return x.Unpaired
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Body interface {
 	isEnvelope_Body()
 }
@@ -3286,6 +3390,10 @@ type Envelope_GetUsage struct {
 	GetUsage *GetUsage `protobuf:"bytes,32,opt,name=get_usage,json=getUsage,proto3,oneof"`
 }
 
+type Envelope_Unpair struct {
+	Unpair *Unpair `protobuf:"bytes,33,opt,name=unpair,proto3,oneof"`
+}
+
 type Envelope_Error struct {
 	// server → client
 	Error *Error `protobuf:"bytes,100,opt,name=error,proto3,oneof"`
@@ -3375,6 +3483,10 @@ type Envelope_UsageReport struct {
 	UsageReport *UsageReport `protobuf:"bytes,121,opt,name=usage_report,json=usageReport,proto3,oneof"`
 }
 
+type Envelope_Unpaired struct {
+	Unpaired *Unpaired `protobuf:"bytes,122,opt,name=unpaired,proto3,oneof"`
+}
+
 func (*Envelope_Hello) isEnvelope_Body() {}
 
 func (*Envelope_Authenticate) isEnvelope_Body() {}
@@ -3421,6 +3533,8 @@ func (*Envelope_Reseed) isEnvelope_Body() {}
 
 func (*Envelope_GetUsage) isEnvelope_Body() {}
 
+func (*Envelope_Unpair) isEnvelope_Body() {}
+
 func (*Envelope_Error) isEnvelope_Body() {}
 
 func (*Envelope_HelloResponse) isEnvelope_Body() {}
@@ -3464,6 +3578,8 @@ func (*Envelope_SnapshotList) isEnvelope_Body() {}
 func (*Envelope_Reseeded) isEnvelope_Body() {}
 
 func (*Envelope_UsageReport) isEnvelope_Body() {}
+
+func (*Envelope_Unpaired) isEnvelope_Body() {}
 
 var File_reflop_v1_compute_proto protoreflect.FileDescriptor
 
@@ -3647,7 +3763,10 @@ const file_reflop_v1_compute_proto_rawDesc = "" +
 	"\x04Ping\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\"\x1c\n" +
 	"\x04Pong\x12\x14\n" +
-	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\"\xb7\x14\n" +
+	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\"\b\n" +
+	"\x06Unpair\"/\n" +
+	"\bUnpaired\x12#\n" +
+	"\ridentity_name\x18\x01 \x01(\tR\fidentityName\"\x97\x15\n" +
 	"\bEnvelope\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\x04R\trequestId\x12\x10\n" +
@@ -3678,7 +3797,8 @@ const file_reflop_v1_compute_proto_rawDesc = "" +
 	"\x0elist_snapshots\x18\x1d \x01(\v2\x18.reflop.v1.ListSnapshotsH\x00R\rlistSnapshots\x12D\n" +
 	"\x0fdelete_snapshot\x18\x1e \x01(\v2\x19.reflop.v1.DeleteSnapshotH\x00R\x0edeleteSnapshot\x12+\n" +
 	"\x06reseed\x18\x1f \x01(\v2\x11.reflop.v1.ReseedH\x00R\x06reseed\x122\n" +
-	"\tget_usage\x18  \x01(\v2\x13.reflop.v1.GetUsageH\x00R\bgetUsage\x12(\n" +
+	"\tget_usage\x18  \x01(\v2\x13.reflop.v1.GetUsageH\x00R\bgetUsage\x12+\n" +
+	"\x06unpair\x18! \x01(\v2\x11.reflop.v1.UnpairH\x00R\x06unpair\x12(\n" +
 	"\x05error\x18d \x01(\v2\x10.reflop.v1.ErrorH\x00R\x05error\x12A\n" +
 	"\x0ehello_response\x18e \x01(\v2\x18.reflop.v1.HelloResponseH\x00R\rhelloResponse\x128\n" +
 	"\vauth_result\x18f \x01(\v2\x15.reflop.v1.AuthResultH\x00R\n" +
@@ -3704,7 +3824,8 @@ const file_reflop_v1_compute_proto_rawDesc = "" +
 	"\x04pong\x18v \x01(\v2\x0f.reflop.v1.PongH\x00R\x04pong\x12>\n" +
 	"\rsnapshot_list\x18w \x01(\v2\x17.reflop.v1.SnapshotListH\x00R\fsnapshotList\x121\n" +
 	"\breseeded\x18x \x01(\v2\x13.reflop.v1.ReseededH\x00R\breseeded\x12;\n" +
-	"\fusage_report\x18y \x01(\v2\x16.reflop.v1.UsageReportH\x00R\vusageReportB\x06\n" +
+	"\fusage_report\x18y \x01(\v2\x16.reflop.v1.UsageReportH\x00R\vusageReport\x121\n" +
+	"\bunpaired\x18z \x01(\v2\x13.reflop.v1.UnpairedH\x00R\bunpairedB\x06\n" +
 	"\x04body*\x94\x05\n" +
 	"\tErrorCode\x12\x11\n" +
 	"\rERROR_INVALID\x10\x00\x12\x12\n" +
@@ -3763,7 +3884,7 @@ func file_reflop_v1_compute_proto_rawDescGZIP() []byte {
 }
 
 var file_reflop_v1_compute_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_reflop_v1_compute_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_reflop_v1_compute_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_reflop_v1_compute_proto_goTypes = []any{
 	(ErrorCode)(0),          // 0: reflop.v1.ErrorCode
 	(ValidationStage)(0),    // 1: reflop.v1.ValidationStage
@@ -3809,52 +3930,54 @@ var file_reflop_v1_compute_proto_goTypes = []any{
 	(*UsageReport)(nil),     // 41: reflop.v1.UsageReport
 	(*Ping)(nil),            // 42: reflop.v1.Ping
 	(*Pong)(nil),            // 43: reflop.v1.Pong
-	(*Envelope)(nil),        // 44: reflop.v1.Envelope
-	(*Device)(nil),          // 45: reflop.v1.Device
-	(*Numerics)(nil),        // 46: reflop.v1.Numerics
-	(*Graph)(nil),           // 47: reflop.v1.Graph
-	(*TensorMeta)(nil),      // 48: reflop.v1.TensorMeta
-	(*ComplexValue)(nil),    // 49: reflop.v1.ComplexValue
-	(*SmallTensor)(nil),     // 50: reflop.v1.SmallTensor
-	(*Authenticate)(nil),    // 51: reflop.v1.Authenticate
-	(*Pair)(nil),            // 52: reflop.v1.Pair
-	(*PackBegin)(nil),       // 53: reflop.v1.PackBegin
-	(*PackChunk)(nil),       // 54: reflop.v1.PackChunk
-	(*PackCommit)(nil),      // 55: reflop.v1.PackCommit
-	(*ListDatasets)(nil),    // 56: reflop.v1.ListDatasets
-	(*DeleteDataset)(nil),   // 57: reflop.v1.DeleteDataset
-	(*AuthResult)(nil),      // 58: reflop.v1.AuthResult
-	(*PairResult)(nil),      // 59: reflop.v1.PairResult
-	(*PackStatus)(nil),      // 60: reflop.v1.PackStatus
-	(*DatasetInfo)(nil),     // 61: reflop.v1.DatasetInfo
-	(*DatasetList)(nil),     // 62: reflop.v1.DatasetList
-	(*DatasetDeleted)(nil),  // 63: reflop.v1.DatasetDeleted
+	(*Unpair)(nil),          // 44: reflop.v1.Unpair
+	(*Unpaired)(nil),        // 45: reflop.v1.Unpaired
+	(*Envelope)(nil),        // 46: reflop.v1.Envelope
+	(*Device)(nil),          // 47: reflop.v1.Device
+	(*Numerics)(nil),        // 48: reflop.v1.Numerics
+	(*Graph)(nil),           // 49: reflop.v1.Graph
+	(*TensorMeta)(nil),      // 50: reflop.v1.TensorMeta
+	(*ComplexValue)(nil),    // 51: reflop.v1.ComplexValue
+	(*SmallTensor)(nil),     // 52: reflop.v1.SmallTensor
+	(*Authenticate)(nil),    // 53: reflop.v1.Authenticate
+	(*Pair)(nil),            // 54: reflop.v1.Pair
+	(*PackBegin)(nil),       // 55: reflop.v1.PackBegin
+	(*PackChunk)(nil),       // 56: reflop.v1.PackChunk
+	(*PackCommit)(nil),      // 57: reflop.v1.PackCommit
+	(*ListDatasets)(nil),    // 58: reflop.v1.ListDatasets
+	(*DeleteDataset)(nil),   // 59: reflop.v1.DeleteDataset
+	(*AuthResult)(nil),      // 60: reflop.v1.AuthResult
+	(*PairResult)(nil),      // 61: reflop.v1.PairResult
+	(*PackStatus)(nil),      // 62: reflop.v1.PackStatus
+	(*DatasetInfo)(nil),     // 63: reflop.v1.DatasetInfo
+	(*DatasetList)(nil),     // 64: reflop.v1.DatasetList
+	(*DatasetDeleted)(nil),  // 65: reflop.v1.DatasetDeleted
 }
 var file_reflop_v1_compute_proto_depIdxs = []int32{
 	0,  // 0: reflop.v1.Error.code:type_name -> reflop.v1.ErrorCode
 	1,  // 1: reflop.v1.Error.stage:type_name -> reflop.v1.ValidationStage
-	45, // 2: reflop.v1.OpenSession.device:type_name -> reflop.v1.Device
-	46, // 3: reflop.v1.OpenSession.numerics:type_name -> reflop.v1.Numerics
-	46, // 4: reflop.v1.SessionOpened.numerics:type_name -> reflop.v1.Numerics
-	47, // 5: reflop.v1.RegisterGraph.graph:type_name -> reflop.v1.Graph
-	48, // 6: reflop.v1.GraphRegistered.output_meta:type_name -> reflop.v1.TensorMeta
-	49, // 7: reflop.v1.InlineScalar.c:type_name -> reflop.v1.ComplexValue
-	50, // 8: reflop.v1.Binding.inline:type_name -> reflop.v1.SmallTensor
+	47, // 2: reflop.v1.OpenSession.device:type_name -> reflop.v1.Device
+	48, // 3: reflop.v1.OpenSession.numerics:type_name -> reflop.v1.Numerics
+	48, // 4: reflop.v1.SessionOpened.numerics:type_name -> reflop.v1.Numerics
+	49, // 5: reflop.v1.RegisterGraph.graph:type_name -> reflop.v1.Graph
+	50, // 6: reflop.v1.GraphRegistered.output_meta:type_name -> reflop.v1.TensorMeta
+	51, // 7: reflop.v1.InlineScalar.c:type_name -> reflop.v1.ComplexValue
+	52, // 8: reflop.v1.Binding.inline:type_name -> reflop.v1.SmallTensor
 	13, // 9: reflop.v1.Binding.scalar:type_name -> reflop.v1.InlineScalar
 	14, // 10: reflop.v1.Binding.dataset:type_name -> reflop.v1.DatasetBinding
 	2,  // 11: reflop.v1.OutputSpec.kind:type_name -> reflop.v1.OutputSpec.Kind
 	15, // 12: reflop.v1.Execute.bindings:type_name -> reflop.v1.Binding
 	16, // 13: reflop.v1.Execute.outputs:type_name -> reflop.v1.OutputSpec
-	48, // 14: reflop.v1.TensorData.meta:type_name -> reflop.v1.TensorMeta
+	50, // 14: reflop.v1.TensorData.meta:type_name -> reflop.v1.TensorMeta
 	18, // 15: reflop.v1.ExecuteResult.returned:type_name -> reflop.v1.TensorData
-	48, // 16: reflop.v1.UploadTensor.meta:type_name -> reflop.v1.TensorMeta
-	48, // 17: reflop.v1.FetchChunk.meta:type_name -> reflop.v1.TensorMeta
+	50, // 16: reflop.v1.UploadTensor.meta:type_name -> reflop.v1.TensorMeta
+	50, // 17: reflop.v1.FetchChunk.meta:type_name -> reflop.v1.TensorMeta
 	32, // 18: reflop.v1.SnapshotList.snapshots:type_name -> reflop.v1.SnapshotInfo
 	3,  // 19: reflop.v1.Event.kind:type_name -> reflop.v1.Event.Kind
 	40, // 20: reflop.v1.UsageReport.by_device:type_name -> reflop.v1.DeviceUsage
 	5,  // 21: reflop.v1.Envelope.hello:type_name -> reflop.v1.Hello
-	51, // 22: reflop.v1.Envelope.authenticate:type_name -> reflop.v1.Authenticate
-	52, // 23: reflop.v1.Envelope.pair:type_name -> reflop.v1.Pair
+	53, // 22: reflop.v1.Envelope.authenticate:type_name -> reflop.v1.Authenticate
+	54, // 23: reflop.v1.Envelope.pair:type_name -> reflop.v1.Pair
 	7,  // 24: reflop.v1.Envelope.open_session:type_name -> reflop.v1.OpenSession
 	9,  // 25: reflop.v1.Envelope.close_session:type_name -> reflop.v1.CloseSession
 	11, // 26: reflop.v1.Envelope.register_graph:type_name -> reflop.v1.RegisterGraph
@@ -3862,11 +3985,11 @@ var file_reflop_v1_compute_proto_depIdxs = []int32{
 	20, // 28: reflop.v1.Envelope.upload_tensor:type_name -> reflop.v1.UploadTensor
 	22, // 29: reflop.v1.Envelope.fetch:type_name -> reflop.v1.Fetch
 	24, // 30: reflop.v1.Envelope.free:type_name -> reflop.v1.Free
-	53, // 31: reflop.v1.Envelope.pack_begin:type_name -> reflop.v1.PackBegin
-	54, // 32: reflop.v1.Envelope.pack_chunk:type_name -> reflop.v1.PackChunk
-	55, // 33: reflop.v1.Envelope.pack_commit:type_name -> reflop.v1.PackCommit
-	56, // 34: reflop.v1.Envelope.list_datasets:type_name -> reflop.v1.ListDatasets
-	57, // 35: reflop.v1.Envelope.delete_dataset:type_name -> reflop.v1.DeleteDataset
+	55, // 31: reflop.v1.Envelope.pack_begin:type_name -> reflop.v1.PackBegin
+	56, // 32: reflop.v1.Envelope.pack_chunk:type_name -> reflop.v1.PackChunk
+	57, // 33: reflop.v1.Envelope.pack_commit:type_name -> reflop.v1.PackCommit
+	58, // 34: reflop.v1.Envelope.list_datasets:type_name -> reflop.v1.ListDatasets
+	59, // 35: reflop.v1.Envelope.delete_dataset:type_name -> reflop.v1.DeleteDataset
 	27, // 36: reflop.v1.Envelope.snapshot:type_name -> reflop.v1.Snapshot
 	29, // 37: reflop.v1.Envelope.restore:type_name -> reflop.v1.Restore
 	35, // 38: reflop.v1.Envelope.subscribe_events:type_name -> reflop.v1.SubscribeEvents
@@ -3875,33 +3998,35 @@ var file_reflop_v1_compute_proto_depIdxs = []int32{
 	34, // 41: reflop.v1.Envelope.delete_snapshot:type_name -> reflop.v1.DeleteSnapshot
 	37, // 42: reflop.v1.Envelope.reseed:type_name -> reflop.v1.Reseed
 	39, // 43: reflop.v1.Envelope.get_usage:type_name -> reflop.v1.GetUsage
-	4,  // 44: reflop.v1.Envelope.error:type_name -> reflop.v1.Error
-	6,  // 45: reflop.v1.Envelope.hello_response:type_name -> reflop.v1.HelloResponse
-	58, // 46: reflop.v1.Envelope.auth_result:type_name -> reflop.v1.AuthResult
-	59, // 47: reflop.v1.Envelope.pair_result:type_name -> reflop.v1.PairResult
-	8,  // 48: reflop.v1.Envelope.session_opened:type_name -> reflop.v1.SessionOpened
-	10, // 49: reflop.v1.Envelope.session_closed:type_name -> reflop.v1.SessionClosed
-	12, // 50: reflop.v1.Envelope.graph_registered:type_name -> reflop.v1.GraphRegistered
-	19, // 51: reflop.v1.Envelope.execute_result:type_name -> reflop.v1.ExecuteResult
-	21, // 52: reflop.v1.Envelope.uploaded:type_name -> reflop.v1.Uploaded
-	23, // 53: reflop.v1.Envelope.fetch_chunk:type_name -> reflop.v1.FetchChunk
-	25, // 54: reflop.v1.Envelope.freed:type_name -> reflop.v1.Freed
-	60, // 55: reflop.v1.Envelope.pack_status:type_name -> reflop.v1.PackStatus
-	61, // 56: reflop.v1.Envelope.dataset_info:type_name -> reflop.v1.DatasetInfo
-	62, // 57: reflop.v1.Envelope.dataset_list:type_name -> reflop.v1.DatasetList
-	63, // 58: reflop.v1.Envelope.dataset_deleted:type_name -> reflop.v1.DatasetDeleted
-	28, // 59: reflop.v1.Envelope.snapshot_saved:type_name -> reflop.v1.SnapshotSaved
-	30, // 60: reflop.v1.Envelope.restored:type_name -> reflop.v1.Restored
-	36, // 61: reflop.v1.Envelope.event:type_name -> reflop.v1.Event
-	43, // 62: reflop.v1.Envelope.pong:type_name -> reflop.v1.Pong
-	33, // 63: reflop.v1.Envelope.snapshot_list:type_name -> reflop.v1.SnapshotList
-	38, // 64: reflop.v1.Envelope.reseeded:type_name -> reflop.v1.Reseeded
-	41, // 65: reflop.v1.Envelope.usage_report:type_name -> reflop.v1.UsageReport
-	66, // [66:66] is the sub-list for method output_type
-	66, // [66:66] is the sub-list for method input_type
-	66, // [66:66] is the sub-list for extension type_name
-	66, // [66:66] is the sub-list for extension extendee
-	0,  // [0:66] is the sub-list for field type_name
+	44, // 44: reflop.v1.Envelope.unpair:type_name -> reflop.v1.Unpair
+	4,  // 45: reflop.v1.Envelope.error:type_name -> reflop.v1.Error
+	6,  // 46: reflop.v1.Envelope.hello_response:type_name -> reflop.v1.HelloResponse
+	60, // 47: reflop.v1.Envelope.auth_result:type_name -> reflop.v1.AuthResult
+	61, // 48: reflop.v1.Envelope.pair_result:type_name -> reflop.v1.PairResult
+	8,  // 49: reflop.v1.Envelope.session_opened:type_name -> reflop.v1.SessionOpened
+	10, // 50: reflop.v1.Envelope.session_closed:type_name -> reflop.v1.SessionClosed
+	12, // 51: reflop.v1.Envelope.graph_registered:type_name -> reflop.v1.GraphRegistered
+	19, // 52: reflop.v1.Envelope.execute_result:type_name -> reflop.v1.ExecuteResult
+	21, // 53: reflop.v1.Envelope.uploaded:type_name -> reflop.v1.Uploaded
+	23, // 54: reflop.v1.Envelope.fetch_chunk:type_name -> reflop.v1.FetchChunk
+	25, // 55: reflop.v1.Envelope.freed:type_name -> reflop.v1.Freed
+	62, // 56: reflop.v1.Envelope.pack_status:type_name -> reflop.v1.PackStatus
+	63, // 57: reflop.v1.Envelope.dataset_info:type_name -> reflop.v1.DatasetInfo
+	64, // 58: reflop.v1.Envelope.dataset_list:type_name -> reflop.v1.DatasetList
+	65, // 59: reflop.v1.Envelope.dataset_deleted:type_name -> reflop.v1.DatasetDeleted
+	28, // 60: reflop.v1.Envelope.snapshot_saved:type_name -> reflop.v1.SnapshotSaved
+	30, // 61: reflop.v1.Envelope.restored:type_name -> reflop.v1.Restored
+	36, // 62: reflop.v1.Envelope.event:type_name -> reflop.v1.Event
+	43, // 63: reflop.v1.Envelope.pong:type_name -> reflop.v1.Pong
+	33, // 64: reflop.v1.Envelope.snapshot_list:type_name -> reflop.v1.SnapshotList
+	38, // 65: reflop.v1.Envelope.reseeded:type_name -> reflop.v1.Reseeded
+	41, // 66: reflop.v1.Envelope.usage_report:type_name -> reflop.v1.UsageReport
+	45, // 67: reflop.v1.Envelope.unpaired:type_name -> reflop.v1.Unpaired
+	68, // [68:68] is the sub-list for method output_type
+	68, // [68:68] is the sub-list for method input_type
+	68, // [68:68] is the sub-list for extension type_name
+	68, // [68:68] is the sub-list for extension extendee
+	0,  // [0:68] is the sub-list for field type_name
 }
 
 func init() { file_reflop_v1_compute_proto_init() }
@@ -3925,7 +4050,7 @@ func file_reflop_v1_compute_proto_init() {
 		(*Binding_Scalar)(nil),
 		(*Binding_Dataset)(nil),
 	}
-	file_reflop_v1_compute_proto_msgTypes[40].OneofWrappers = []any{
+	file_reflop_v1_compute_proto_msgTypes[42].OneofWrappers = []any{
 		(*Envelope_Hello)(nil),
 		(*Envelope_Authenticate)(nil),
 		(*Envelope_Pair)(nil),
@@ -3949,6 +4074,7 @@ func file_reflop_v1_compute_proto_init() {
 		(*Envelope_DeleteSnapshot)(nil),
 		(*Envelope_Reseed)(nil),
 		(*Envelope_GetUsage)(nil),
+		(*Envelope_Unpair)(nil),
 		(*Envelope_Error)(nil),
 		(*Envelope_HelloResponse)(nil),
 		(*Envelope_AuthResult)(nil),
@@ -3971,6 +4097,7 @@ func file_reflop_v1_compute_proto_init() {
 		(*Envelope_SnapshotList)(nil),
 		(*Envelope_Reseeded)(nil),
 		(*Envelope_UsageReport)(nil),
+		(*Envelope_Unpaired)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3978,7 +4105,7 @@ func file_reflop_v1_compute_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_reflop_v1_compute_proto_rawDesc), len(file_reflop_v1_compute_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   41,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -86,6 +86,16 @@ def known_hosts_options(fingerprint_hex: str, host_keys: list[str]) -> list[str]
             "-o", "HostKeyAlias=" + a, "-o", "CheckHostIP=no"]
 
 
+def forget(fingerprint_hex: str) -> None:
+    """Delete the host keys pinned for a server (`reflop unpair`)."""
+    if not all(c in "0123456789abcdef" for c in fingerprint_hex) or len(fingerprint_hex) != 64:
+        return  # not a name this module wrote
+    try:
+        (config_dir() / "ssh_known_hosts" / fingerprint_hex).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def _write_atomic(path: Path, data: str) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix="." + path.name + ".tmp-")
     try:

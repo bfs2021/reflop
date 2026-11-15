@@ -45,6 +45,9 @@ type Identity struct {
 	Keys    []Key     `json:"keys"`
 	Created time.Time `json:"created"`
 	Revoked bool      `json:"revoked,omitempty"`
+	// GuestUnpaired is when the Guest ran `reflop unpair`, which revokes
+	// the identity; the Owner is asked to delete it (ADR-025).
+	GuestUnpaired *time.Time `json:"guest_unpaired,omitempty"`
 }
 
 // IDBytes returns the 16-byte identity id.
@@ -152,7 +155,8 @@ func (s *Store) CreateInvite(name string, ttl time.Duration) (*Invite, error) {
 	s.refreshLocked()
 	for _, id := range s.db.Identities {
 		if id.Name == name && id.Revoked {
-			return nil, fmt.Errorf("identity %q was revoked; choose another name", name)
+			return nil, fmt.Errorf("identity %q was revoked; delete it first with `reflopd unpair %s` "+
+				"(or `reflopd users delete %s`), or choose another name", name, name, name)
 		}
 	}
 	secret := make([]byte, 32)
@@ -227,7 +231,7 @@ func (s *Store) Redeem(req *pb.Pair, nonce, serverFP []byte) (*Identity, error) 
 	}
 	if owner := s.byKeyLocked(req.PublicKey); owner != nil {
 		_ = s.saveLocked()
-		return nil, fmt.Errorf("this key is already registered to %q", owner.Name)
+		return nil, &KeyRegisteredError{Name: owner.Name}
 	}
 	id := s.byNameLocked(inv.Name)
 	if id == nil {
@@ -237,6 +241,18 @@ func (s *Store) Redeem(req *pb.Pair, nonce, serverFP []byte) (*Identity, error) 
 	id.Keys = append(id.Keys, Key{Public: req.PublicKey, Added: time.Now().UTC().Truncate(time.Second), Via: "tls"})
 	s.pruneLocked()
 	return id, s.saveLocked()
+}
+
+// KeyRegisteredError refuses a Pair whose key already belongs to an active
+// identity. The Guest has forgotten this server (`reflop unpair` while it
+// could not reach it, or an older `reflop servers remove`) but the Owner
+// has not unpaired it yet. The message is for the Guest: it passed the
+// invite's MAC, and the identity is its own.
+type KeyRegisteredError struct{ Name string }
+
+func (e *KeyRegisteredError) Error() string {
+	return fmt.Sprintf("this machine's key is still registered to %q on this server. Ask the Owner to run "+
+		"`reflopd unpair %s`, then pair again with a new invite", e.Name, e.Name)
 }
 
 // AddKey registers a key directly (SSH pipe mode: the Owner pastes the
@@ -255,11 +271,12 @@ func (s *Store) AddKey(name string, pub []byte, via, comment string) (*Identity,
 		if owner.Name == name {
 			return owner, nil
 		}
-		return nil, fmt.Errorf("this key is already registered to %q", owner.Name)
+		return nil, fmt.Errorf("this key is already registered to %q; to give it to %q, run `reflopd unpair %s` first", owner.Name, name, owner.Name)
 	}
 	id := s.byNameLocked(name)
 	if id != nil && id.Revoked {
-		return nil, fmt.Errorf("identity %q was revoked; choose another name", name)
+		return nil, fmt.Errorf("identity %q was revoked; delete it first with `reflopd unpair %s` "+
+			"(or `reflopd users delete %s`), or choose another name", name, name, name)
 	}
 	if id == nil {
 		id = &Identity{ID: randHex(16), Name: name, Created: time.Now().UTC().Truncate(time.Second)}
@@ -324,15 +341,44 @@ func (s *Store) Revoke(name string) (*Identity, error) {
 	if id == nil {
 		return nil, fmt.Errorf("no identity named %q", name)
 	}
+	removed := s.revokeLocked(id)
+	return &removed, s.saveLocked()
+}
+
+// revokeLocked marks id revoked, drops its keys and uses up its invites. It
+// returns the identity as it was, keys included.
+func (s *Store) revokeLocked(id *Identity) Identity {
 	id.Revoked = true
 	removed := *id
 	id.Keys = nil
 	for i, inv := range s.db.Invites {
-		if inv.Name == name {
+		if inv.Name == id.Name {
 			s.db.Invites[i].Used = true
 		}
 	}
-	return &removed, s.saveLocked()
+	return removed
+}
+
+// GuestUnpair revokes the identity with id idHex at its own Guest's request
+// (`reflop unpair`) and records when. Only an authenticated connection of
+// that identity calls it, so a Guest can give up only its own access. The
+// Owner still deletes the identity (ADR-025).
+func (s *Store) GuestUnpair(idHex string) (*Identity, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshLocked()
+	for _, id := range s.db.Identities {
+		if id.ID == idHex {
+			if id.Revoked {
+				return nil, ErrAuth
+			}
+			now := time.Now().UTC().Truncate(time.Second)
+			id.GuestUnpaired = &now
+			removed := s.revokeLocked(id)
+			return &removed, s.saveLocked()
+		}
+	}
+	return nil, ErrAuth
 }
 
 // ErrNotRevoked refuses to delete an identity that can still connect.

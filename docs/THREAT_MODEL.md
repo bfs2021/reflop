@@ -89,6 +89,10 @@ unless the Owner passes `--accept-weak-isolation`.
 - Pairing: an HMAC with the invite's one-time secret over the same binding,
   plus a signature by the new key. An invite is consumed by its first use,
   successful or not.
+- Unpair (ADR-025): accepted only after authentication, and it revokes only
+  the connection's own identity. A Guest can give up its own access, never
+  another's, and it deletes no data; deletion is the Owner's `reflopd
+  unpair`. Before authentication it is refused like any other request.
 - Before authentication: frames are capped at 64 KiB, and buffers grow only
   as bytes arrive. Every connection counts against `max_connections` from the
   moment it is accepted, one source address may hold at most 16 connections

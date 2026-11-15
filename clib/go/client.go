@@ -223,6 +223,11 @@ func connect(server, device string) (*conn, error) {
 		PublicKey: pub, Signature: ed25519.Sign(key, msg)}}})
 	if err != nil {
 		rw.Close()
+		var re *remoteError
+		if errors.As(err, &re) && re.Code == pb.ErrorCode_ERROR_UNAUTHENTICATED {
+			return nil, fmt.Errorf("%w: %s no longer accepts this machine's key (the Owner revoked or unpaired %q); "+
+				"run `reflop unpair %s` to forget it", err, e.Name, e.Identity, e.Name)
+		}
 		return nil, err
 	}
 	c.caps = ar.GetAuthResult().GetCapabilities()
@@ -257,6 +262,14 @@ func kinds(device string) []pb.DeviceKind {
 	return []pb.DeviceKind{pb.DeviceKind_DEVICE_CUDA, pb.DeviceKind_DEVICE_CPU}
 }
 
+// remoteError is an Error the server sent.
+type remoteError struct {
+	Code pb.ErrorCode
+	Msg  string
+}
+
+func (e *remoteError) Error() string { return fmt.Sprintf("[%s] %s", e.Code.String(), e.Msg) }
+
 // call sends a request and waits for its (single or stream) response.
 func (c *conn) call(env *pb.Envelope) (*pb.Envelope, error) {
 	frames, err := c.stream(env)
@@ -282,7 +295,7 @@ func (c *conn) stream(env *pb.Envelope) ([]*pb.Envelope, error) {
 			continue // events are informational; unknown ids are ignored
 		}
 		if e := r.GetError(); e != nil {
-			return nil, fmt.Errorf("[%s] %s", e.Code.String(), sanitize(e.Message))
+			return nil, &remoteError{Code: e.Code, Msg: sanitize(e.Message)}
 		}
 		out = append(out, r)
 		if r.End || r.GetFetchChunk() == nil {

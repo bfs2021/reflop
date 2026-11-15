@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+Unpairing (#6, ADR-025). A Guest can now pair again with a server it was
+paired with, once both sides have unpaired, in either order.
+
+reflopd:
+
+- New `reflopd unpair <name>`: `revoke` and `users delete` in one step. It
+  asks first, because it deletes the Guest's datasets and snapshots; pass
+  `--yes` in scripts.
+- When a Guest runs `reflop unpair`, reflopd revokes that identity at once,
+  logs it, writes a `guest_unpaired` audit record, and lists it in `reflopd
+  users` as "unpaired by guest". `reflopd status` shows the command that
+  finishes it.
+- A pairing attempt with a key that is still registered now tells the Guest,
+  the daemon log and the audit record to run `reflopd unpair <name>`.
+  Inviting a revoked name says the same.
+- Confirmation prompts no longer treat `/dev/null` on stdin as a terminal.
+
+Client:
+
+- New `reflop unpair [server]`: tells the server to revoke this machine's
+  key, then forgets the server and its pinned SSH host keys. The server is
+  forgotten even if it cannot be reached; the message then says what the Owner
+  has to run. `--local` skips the connection.
+- `reflop servers remove <name>` now unpairs. Before, it removed only the
+  local entry, which left the key registered on the server, so pairing with
+  that server again always failed.
+- When a server rejects this machine's key, the error says to run `reflop
+  unpair <server>`. `reflop pair` with a server this machine is already
+  paired with says to unpair first, before it uses up the invite. libreflop
+  gives the same hint.
+- Protocol: new messages `Unpair` and `Unpaired`.
+
 ## 0.1.11 (2026-11-12)
 
 reflopd:
