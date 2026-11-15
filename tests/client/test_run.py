@@ -4,8 +4,10 @@ signal and exits 128 + n, the status the shell would have reported itself."""
 
 import signal
 import subprocess
+import sys
 
-from reflop.cli.main import main
+import pytest
+from reflop.cli.main import _signal_name, main
 
 
 def test_signal_death_is_reported(monkeypatch, capsys):
@@ -15,7 +17,18 @@ def test_signal_death_is_reported(monkeypatch, capsys):
 
     assert rc == 128 + signal.SIGSEGV
     err = capsys.readouterr().err
-    assert "python -c raise was killed by SIGSEGV (signal 11)" in err
+    assert "python was killed by SIGSEGV (signal 11)" in err
+
+
+def test_only_the_program_name_is_echoed(monkeypatch, capsys):
+    """The argv tail can carry secrets, so it must not reach stderr."""
+    monkeypatch.setattr(subprocess, "call", lambda command, env=None: -signal.SIGTERM)
+
+    main(["run", "hf", "login", "--token", "hf_secret"])
+
+    err = capsys.readouterr().err
+    assert "hf was killed by SIGTERM" in err
+    assert "hf_secret" not in err
 
 
 def test_exit_status_passes_through(monkeypatch):
@@ -24,8 +37,17 @@ def test_exit_status_passes_through(monkeypatch):
     assert main(["run", "false"]) == 3
 
 
-def test_unknown_signal_number_still_reported(monkeypatch, capsys):
-    monkeypatch.setattr(subprocess, "call", lambda command, env=None: -1000)
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals only: Windows reports a plain exit status")
+def test_a_real_child_killed_by_a_signal(capsys):
+    """No fake here: the child really dies from a signal, so the path that
+    turns a negative wait status into 128 + n is exercised end to end."""
+    rc = main(["run", sys.executable, "-c", "import os, signal; os.kill(os.getpid(), signal.SIGSEGV)"])
 
-    assert main(["run", "crash"]) == 1128
-    assert "crash was killed by signal 1000 (signal 1000)" in capsys.readouterr().err
+    assert rc == 128 + signal.SIGSEGV
+    err = capsys.readouterr().err
+    assert "was killed by SIGSEGV (signal 11)" in err
+    assert sys.executable in err
+
+
+def test_signal_name_falls_back_for_a_nameless_number():
+    assert _signal_name(1_000_000) == "signal 1000000"
