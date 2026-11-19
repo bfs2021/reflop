@@ -128,16 +128,38 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+MAX_LATEST_REDIRECTS = 5
+
+
 def latest() -> str:
-    opener = urllib.request.build_opener(_NoRedirect)
-    req = urllib.request.Request(_releases() + "/latest", method="HEAD", headers={"User-Agent": "reflop"})
-    try:
-        opener.open(req, timeout=30)
-    except urllib.error.HTTPError as e:
-        loc = e.headers.get("Location", "")
-        tag = loc.rsplit("/", 1)[-1]
-        if TAG.match(tag):
-            return tag
+    """Read the newest tag from <releases>/latest.
+
+    GitHub can issue more than one redirect (a repo rename/transfer makes
+    <releases>/latest first point at the new owner's <releases>/latest), so
+    follow chained redirects while the target is still a /latest URL on the
+    same host and scheme. The tag is taken from the last Location.
+    """
+    base = urllib.parse.urlsplit(_releases())
+    current = _releases() + "/latest"
+    for _ in range(MAX_LATEST_REDIRECTS):
+        opener = urllib.request.build_opener(_NoRedirect)
+        req = urllib.request.Request(current, method="HEAD", headers={"User-Agent": "reflop"})
+        try:
+            opener.open(req, timeout=30)
+            return ""  # a 2xx with no Location: no release to find
+        except urllib.error.HTTPError as e:
+            loc = e.headers.get("Location", "")
+            if loc:
+                target = urllib.parse.urljoin(current, loc)
+                u = urllib.parse.urlsplit(target)
+                # Only follow redirects that keep the scheme and host, so a
+                # release host cannot bounce us to an arbitrary server.
+                if (u.scheme, u.hostname) == (base.scheme, base.hostname) and u.path.endswith("/latest"):
+                    current = target
+                    continue
+                tag = u.path.rsplit("/", 1)[-1]
+                if (u.scheme, u.hostname) == (base.scheme, base.hostname) and TAG.match(tag):
+                    return tag
     raise RuntimeError("could not determine the latest reflop release (none published yet?)")
 
 

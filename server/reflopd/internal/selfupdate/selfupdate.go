@@ -81,27 +81,51 @@ var tagRe = regexp.MustCompile(`^v\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$`)
 
 // Latest returns the tag of the newest (non-prerelease) release. It follows
 // the /releases/latest redirect rather than the rate-limited GitHub API.
+// A repo rename/transfer can chain redirects (old /latest -> new /latest ->
+// tag), so follow them while they stay on the same host and scheme and still
+// point at a /latest URL; the tag comes from the final Location.
 func (u *Updater) Latest(ctx context.Context) (string, error) {
-	c := *u.Client
-	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.BaseURL+"/latest", nil)
+	const maxRedirects = 5
+	base, err := url.Parse(u.BaseURL)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("invalid release URL %q: %w", u.BaseURL, err)
 	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("could not reach %s: %w", u.BaseURL, err)
+	current := u.BaseURL + "/latest"
+	for i := 0; i < maxRedirects; i++ {
+		c := *u.Client
+		c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, current, nil)
+		if err != nil {
+			return "", err
+		}
+		resp, err := c.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("could not reach %s: %w", u.BaseURL, err)
+		}
+		resp.Body.Close()
+		loc := resp.Header.Get("Location")
+		if loc == "" {
+			return "", fmt.Errorf("could not determine the latest release from %s/latest (HTTP %d)", u.BaseURL, resp.StatusCode)
+		}
+		target, err := url.Parse(loc)
+		if err != nil {
+			return "", fmt.Errorf("invalid redirect %q: %w", loc, err)
+		}
+		next := base.ResolveReference(target)
+		if next.Scheme == base.Scheme && next.Host == base.Host && strings.HasSuffix(next.Path, "/latest") {
+			current = next.String()
+			continue
+		}
+		if next.Scheme != base.Scheme || next.Host != base.Host {
+			return "", fmt.Errorf("refusing to follow release redirect to %q", loc)
+		}
+		tag := next.Path[strings.LastIndex(next.Path, "/")+1:]
+		if !tagRe.MatchString(tag) {
+			return "", fmt.Errorf("could not determine the latest release (redirected to %q)", loc)
+		}
+		return tag, nil
 	}
-	resp.Body.Close()
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return "", fmt.Errorf("could not determine the latest release from %s/latest (HTTP %d)", u.BaseURL, resp.StatusCode)
-	}
-	tag := loc[strings.LastIndex(loc, "/")+1:]
-	if !tagRe.MatchString(tag) {
-		return "", fmt.Errorf("could not determine the latest release (redirected to %q)", loc)
-	}
-	return tag, nil
+	return "", fmt.Errorf("could not determine the latest release from %s/latest (too many redirects)", u.BaseURL)
 }
 
 // Archive is the release archive name for a tag on this platform.
